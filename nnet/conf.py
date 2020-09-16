@@ -5,12 +5,12 @@ num_spks = 2
 
 # network configure
 nnet_conf = {
-    "L": 20,
-    "N": 256,
-    "X": 8,
-    "R": 4,
-    "B": 256,
-    "H": 512,
+    "L": 40,
+    "N": 128,
+    "X": 7,
+    "R": 3,
+    "B": 128,
+    "H": 192,
     "P": 3,
     "norm": "BN",
     "num_spks": num_spks,
@@ -18,8 +18,8 @@ nnet_conf = {
 }
 
 # data configure:
-train_dir = "data/wsj0_2mix/tr/"
-dev_dir = "data/wsj0_2mix/cv/"
+train_dir = "../min_dataset/tr/"
+dev_dir = "../min_dataset/cv/"
 
 train_data = {
     "mix_scp":

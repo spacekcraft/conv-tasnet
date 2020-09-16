@@ -1,19 +1,32 @@
-#!/usr/bin/env bash
+#!/bin/bash
+#
+#$ -N ConvTasNet
+#$ -S /bin/bash
+#$ -o /pub/users/xpavlu10/log.txt
+#$ -e /pub/users/xpavlu10/err.txt
+#$ -q long.q@@gpu
+#$ -l ram_free=3500M,mem_free=3500M,gpu=1
+
+cd /pub/users/xpavlu10/conv-tasnet
+
+unset PYTHONHOME
+unset PYTHONPATH
+
+source ../anaconda3/bin/activate
+conda --version
+echo "Enviroment activated"
+python --version
 
 set -eu
+cpt_dir=exp/$(date +"%y-%m-%d-%H-%M-%S")
 
-cpt_dir=exp/conv_tasnet
 epochs=100
 # constrainted by GPU number & memory
 batch_size=32
 cache_size=16
-
-[ $# -ne 2 ] && echo "Script error: $0 <gpuid> <cpt-id>" && exit 1
-
 ./nnet/train.py \
-  --gpu $1 \
+  --gpu 0 \
   --epochs $epochs \
   --batch-size $batch_size \
-  --cache-size $cache_size \
-  --checkpoint $cpt_dir/$2 \
-  > $2.train.log 2>&1
+  --checkpoint $cpt_dir \
+  > ./$cpt_dir.train.log 2>&1

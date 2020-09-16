@@ -3,6 +3,8 @@
 import os
 import sys
 import time
+import subprocess
+import pdb
 
 from itertools import permutations
 from collections import defaultdict
@@ -13,7 +15,6 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.nn.utils import clip_grad_norm_
 
 from .utils import get_logger
-
 
 def load_obj(obj, device):
     """
@@ -91,12 +92,25 @@ class Trainer(object):
                  logging_period=100,
                  resume=None,
                  no_impr=6):
+        #TODO nvidia smi call here 
+        
+        freeGpu = subprocess.check_output('nvidia-smi -q | grep "Minor\|Processes"| grep "None" -B1 | tr -d " " | cut -d ":" -f2 | sed -n "1p"', shell=True)
+        if len(freeGpu) == 0: # if gpu not aviable use cpu
+            raise RuntimeError("CUDA device unavailable...exist")
+        #exit(1)
+        self.device = th.device('cuda:'+freeGpu.decode().strip())
+        
+        from torch.utils.tensorboard import SummaryWriter
+        self.writer = SummaryWriter()
+        '''
         if not th.cuda.is_available():
             raise RuntimeError("CUDA device unavailable...exist")
         if not isinstance(gpuid, tuple):
             gpuid = (gpuid, )
-        self.device = th.device("cuda:{}".format(gpuid[0]))
-        self.gpuid = gpuid
+        '''
+
+        self.gpuid = (int(freeGpu.decode().strip()), )
+
         if checkpoint and not os.path.exists(checkpoint):
             os.makedirs(checkpoint)
         self.checkpoint = checkpoint
@@ -240,6 +254,11 @@ class Trainer(object):
                     best_loss = cv["loss"]
                     no_impr = 0
                     self.save_checkpoint(best=True)
+                
+                self.writer.add_scalar("Train", tr["loss"], self.cur_epoch)
+                self.writer.add_scalar("CrossValidation", cv["loss"], self.cur_epoch)
+                self.writer.flush()
+                
                 self.logger.info(
                     "{title} {tr} | {cv} {scheduler}".format(**stats))
                 # schedule here
