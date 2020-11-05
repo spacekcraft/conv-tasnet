@@ -2,7 +2,7 @@
 
 # wujian@2018
 """
-Compute SI-tqdSDR as the evaluation metric
+Compute SI-SDR as the evaluation metric
 """
 
 import argparse
