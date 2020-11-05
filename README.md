@@ -2,6 +2,9 @@
 
 A PyTorch implementation of the [TasNet: Surpassing Ideal Time-Frequency Masking for Speech Separation](https://arxiv.org/abs/1809.07454)
 
+## Mixture of Mixtures
+A PyTorch implementation of the [Mixture of Mixtures: Unsupervised Sound Separation Using Mixture Invariant Training](https://arxiv.org/abs/2006.12701)
+
 ### Requirements
 
 see [requirements.txt](requirements.txt)
@@ -36,3 +39,4 @@ see [requirements.txt](requirements.txt)
 ### Reference
 
 Luo Y, Mesgarani N. TasNet: Surpassing Ideal Time-Frequency Masking for Speech Separation[J]. arXiv preprint arXiv:1809.07454, 2018.
+Wisdom, S., Tzinis, E., Erdogan, H., Weiss, R.J., Wilson, K. and Hershey, J.R., 2020. Unsupervised sound separation using mixtures of mixtures. arXiv preprint arXiv:2006.12701, 2020.
