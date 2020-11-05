@@ -8,27 +8,38 @@ import argparse
 import random
 
 from libs.trainer import SiSnrTrainer
+from libs.trainer import MixtureOfMixturesTrainer
 from libs.dataset import make_dataloader
 from libs.utils import dump_json, get_logger
 
 from conv_tas_net import ConvTasNet
 from conf import trainer_conf, nnet_conf, train_data, dev_data, chunk_size
+import pdb
 
 logger = get_logger(__name__)
 
 
 def run(args):
-    
-
+    train_data["knownPercent"] = args.known_percent
+    dev_data["knownPercent"] = args.known_percent
     gpuids = tuple(map(int, args.gpus.split(",")))
 
     nnet = ConvTasNet(**nnet_conf)
-    trainer = SiSnrTrainer(nnet,
-                           gpuid=gpuids,
-                           checkpoint=args.checkpoint,
-                           resume=args.resume,
-                           **trainer_conf)
-
+    if args.mixofmix == 0:
+        logger.info("SisSnrTrainer")
+        trainer = SiSnrTrainer(nnet,
+                            gpuid=gpuids,
+                            checkpoint=args.checkpoint,
+                            resume=args.resume,
+                            **trainer_conf)
+    else:
+        logger.info("MixtureOfMixturesTrainer")
+        trainer = MixtureOfMixturesTrainer(nnet,
+                            gpuid=gpuids,
+                            checkpoint=args.checkpoint,
+                            resume=args.resume,
+                            **trainer_conf)
+    logger.info("Known pecents "+str(dev_data["knownPercent"]))
     data_conf = {
         "train": train_data,
         "dev": dev_data,
@@ -38,17 +49,30 @@ def run(args):
                            ["mdl.json", "trainer.json", "data.json"]):
         dump_json(conf, args.checkpoint, fname)
 
-    train_loader = make_dataloader(train=True,
-                                   data_kwargs=train_data,
-                                   batch_size=args.batch_size,
-                                   chunk_size=chunk_size,
-                                   num_workers=args.num_workers)
-    dev_loader = make_dataloader(train=False,
-                                 data_kwargs=dev_data,
-                                 batch_size=args.batch_size,
-                                 chunk_size=chunk_size,
-                                 num_workers=args.num_workers)
-
+    if args.mixofmix == 0:
+        train_loader = make_dataloader(train=True,
+                                    data_kwargs=train_data,
+                                    batch_size=args.batch_size,
+                                    chunk_size=chunk_size,
+                                    num_workers=args.num_workers)
+        dev_loader = make_dataloader(train=False,
+                                    data_kwargs=dev_data,
+                                    batch_size=args.batch_size,
+                                    chunk_size=chunk_size,
+                                    num_workers=args.num_workers)
+    else:
+        train_loader = make_dataloader(train=True,
+                                    data_kwargs=train_data,
+                                    batch_size=args.batch_size,
+                                    chunk_size=chunk_size,
+                                    num_workers=args.num_workers,
+                                    mixofmix = True)
+        dev_loader = make_dataloader(train=False,
+                                    data_kwargs=dev_data,
+                                    batch_size=args.batch_size,
+                                    chunk_size=chunk_size,
+                                    num_workers=args.num_workers,
+                                    mixofmix = True)
     trainer.run(train_loader, dev_loader, num_epochs=args.epochs)
 
 
@@ -82,6 +106,14 @@ if __name__ == "__main__":
                         type=int,
                         default=4,
                         help="Number of workers used in data loader")
+    parser.add_argument("--mixofmix",
+                        type=int,
+                        default=0,
+                        help="Number of workers used in data loader")
+    parser.add_argument("--known_percent",
+                        type=int,
+                        default=0,
+                        help="Percent of supervised mixtures")
     args = parser.parse_args()
     logger.info("Arguments in command:\n{}".format(pprint.pformat(vars(args))))
     

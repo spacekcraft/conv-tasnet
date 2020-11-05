@@ -16,6 +16,10 @@ from torch.nn.utils import clip_grad_norm_
 
 from .utils import get_logger
 
+from itertools import combinations
+
+import pdb
+
 def load_obj(obj, device):
     """
     Offload tensor object in obj to cuda device
@@ -92,22 +96,15 @@ class Trainer(object):
                  logging_period=100,
                  resume=None,
                  no_impr=6):
-        #TODO nvidia smi call here 
-        
+        #Nvidia smi call
         freeGpu = subprocess.check_output('nvidia-smi -q | grep "Minor\|Processes"| grep "None" -B1 | tr -d " " | cut -d ":" -f2 | sed -n "1p"', shell=True)
         if len(freeGpu) == 0: # if gpu not aviable use cpu
             raise RuntimeError("CUDA device unavailable...exist")
-        #exit(1)
         self.device = th.device('cuda:'+freeGpu.decode().strip())
         
+        #init tensorboard summary writer
         from torch.utils.tensorboard import SummaryWriter
         self.writer = SummaryWriter()
-        '''
-        if not th.cuda.is_available():
-            raise RuntimeError("CUDA device unavailable...exist")
-        if not isinstance(gpuid, tuple):
-            gpuid = (gpuid, )
-        '''
 
         self.gpuid = (int(freeGpu.decode().strip()), )
 
@@ -239,9 +236,11 @@ class Trainer(object):
                 stats[
                     "title"] = "Loss(time/N, lr={:.3e}) - Epoch {:2d}:".format(
                         cur_lr, self.cur_epoch)
+                #call train
                 tr = self.train(train_loader)
                 stats["tr"] = "train = {:+.4f}({:.2f}m/{:d})".format(
                     tr["loss"], tr["cost"], tr["batches"])
+                #call eval
                 cv = self.eval(dev_loader)
                 stats["cv"] = "dev = {:+.4f}({:.2f}m/{:d})".format(
                     cv["loss"], cv["cost"], cv["batches"])
@@ -255,6 +254,7 @@ class Trainer(object):
                     no_impr = 0
                     self.save_checkpoint(best=True)
                 
+                #Tensorboard
                 self.writer.add_scalar("Train", tr["loss"], self.cur_epoch)
                 self.writer.add_scalar("CrossValidation", cv["loss"], self.cur_epoch)
                 self.writer.flush()
@@ -324,3 +324,183 @@ class SiSnrTrainer(Trainer):
         max_perutt, _ = th.max(sisnr_mat, dim=0)
         # si-snr
         return -th.sum(max_perutt) / N
+
+class MixtureOfMixturesTrainer(Trainer):
+    def __init__(self, *args, **kwargs):
+        super(MixtureOfMixturesTrainer, self).__init__(*args, **kwargs)
+        self.combs = None
+
+    def sisnr(self, x, s, eps=1e-8):
+        """
+        Arguments:
+        x: separated signal, N x S tensor
+        s: reference signal, N x S tensor
+        Return:
+        sisnr: N tensor
+        """
+
+        def l2norm(mat, keepdim=False):
+            return th.norm(mat, dim=-1, keepdim=keepdim)
+
+        if x.shape != s.shape:
+            raise RuntimeError(
+                "Dimention mismatch when calculate si-snr, {} vs {}".format(
+                    x.shape, s.shape))
+        x_zm = x - th.mean(x, dim=-1, keepdim=True)
+        s_zm = s - th.mean(s, dim=-1, keepdim=True)
+        t = th.sum(
+            x_zm * s_zm, dim=-1,
+            keepdim=True) * s_zm / (l2norm(s_zm, keepdim=True)**2 + eps)
+        return 20 * th.log10(eps + l2norm(t) / (l2norm(x_zm - t) + eps))
+
+    def genCombinations(self, N): # tohle generovat tak, aby byla pro 4 jen 1/3 2/2
+        """
+        Arguments:
+        N: number of outputs
+        Return:
+        all: generated combinations
+        """
+        all = []
+        m = [i for i in range(N)]
+        for i in range(int(N/2),N):
+            #pdb.set_trace()
+            left = list(combinations(m, i))
+            for eachLeft in left:
+                eachLeft = sorted(eachLeft) #sort eachLeft
+                x = [i for i in m if i not in eachLeft]
+                for eachRight in list(combinations(x,N-len(eachLeft))): # where N-len(eachLeft)
+                    newOne = (eachLeft, sorted(eachRight))
+                    newOne2 = (sorted(eachRight), eachLeft)
+                    #pdb.set_trace()
+                    if (newOne not in all) and (newOne2 not in all):   #duplicity check, check if this pair exists in all, this is possible because eachLeft and newOne are sorted
+                        all.append(newOne)
+        return all
+
+    def computePIT_loss(self, ests, refs):
+        '''PIT objective function
+        '''
+        #create zero references to make len(refs) == len(ests)
+        zero_refs = refs.copy()
+        if len(refs) > len(ests):
+                    raise RuntimeError("There are more references then separs")
+        elif len(ests) > len(refs):
+            for i in range(len(ests) - len(refs)):
+                    zero_refs.append(th.zeros_like(refs[0]))
+                    #zero_refs.append(th.randn_like(refs[0]))
+
+        #count loss of each combination for each speech in batch and choose the best combination
+
+        #pro kazdou promluvu z batche si pamatovat nejlepsi loss a nejlepsi kombinaci
+
+        num_spks = len(zero_refs)
+
+        def zero_sisnr_loss(permute):
+            # for one permute
+            snrList = []
+            for s, t in enumerate(permute):
+                #try different outputs of nn to zero refs
+                snrList.append(self.sisnr(ests[t], zero_refs[s]))#th.reshape(self.sisnr(ests[s], zero_refs[t]),(1,32))
+            snrSum = th.sum(th.stack(snrList), dim=0)
+            return snrSum
+        
+        bestSnr = None # list of best SNR
+        bestPerm = None # list of best permutation
+        for p in permutations(range(num_spks)):
+            if bestSnr is None:
+                bestSnr = zero_sisnr_loss(p)
+                bestPerm = [p for i in range(len(bestSnr))]
+            else:
+                newSnr = zero_sisnr_loss(p)
+                # for each speech in batch
+                for i in range(len(bestSnr)):
+                    # if loss with permutation p is better then bestSnr, save newSnr to bestSnr, and save p to bestPerm
+                    if bestSnr[i] < newSnr[i]:
+                        bestSnr[i] = newSnr[i]
+                        bestPerm[i] = p
+        
+        i = 0
+        returnLoss = []
+        for speechPerm in bestPerm:
+            # count snr on bestPermutation
+            snrLoss = 0
+            for s, t in enumerate(speechPerm[:len(refs)]):
+                snrLoss += self.sisnr(ests[t], refs[s])[i]
+            returnLoss.append(snrLoss / len(refs))
+            i += 1
+        return th.stack(returnLoss)
+
+    def computeMIXOFMIX_loss(self, ests, refs):
+        '''Mix of mix objective function
+        '''
+        num_spks = len(refs)
+        num_ests = len(ests) # number of estimates
+        loss = None
+        if self.combs is None: # if combinations are not generated, generate them and remember them
+            self.combs = self.genCombinations(num_ests)
+            print("Combinations generated", self.combs)
+        #for each combination in combs
+        for comb in self.combs:
+            #generate mix of outputs
+            first = None # first mix of estimates
+            for out in comb[0]:
+                if first is None:
+                    first = ests[out]
+                else:    
+                    first += ests[out]
+            second = None # second mix of estimates
+            for out in comb[1]:
+                if second is None:
+                    second = ests[out]
+                else:    
+                    second += ests[out]
+            #try both combinations
+            if first is None or second is None:
+                raise RuntimeError("First or Second is None in loss function.")
+            #firstLoss is array of size N -> means batch size
+            firstLoss = (self.sisnr(first, refs[0]) + self.sisnr(second, refs[1]))/2 # u sissnr chci vetsi hodnotu, tudiz bud obratit znamenko, nebo udelat maximum a pak vratit minus hodnotu
+            secondLoss = (self.sisnr(second, refs[0]) + self.sisnr(first, refs[1]))/2
+            #compare loss from both permutation
+            stackedLoss = th.stack([firstLoss, secondLoss])
+            newLoss = th.max(stackedLoss, dim=0).values
+            #compare with losses from other combinations        
+            if loss is None:
+                loss = newLoss
+            else:
+                stackedLoss = th.stack([newLoss, loss])
+                loss = th.max(stackedLoss, dim=0).values
+        return loss
+
+    def compute_loss(self, egs): # data jsou v batchi, to jest druha shape, spocitat pro kazde dato zvlast, vybirat max
+        # spks x n x S
+        ests = th.nn.parallel.data_parallel(
+            self.nnet, egs["mix"], device_ids=self.gpuid) #get estimated output
+        # spks x n x S
+        refs = egs["ref"]
+        # n x S
+        known = egs["known"]
+        #separate known and uknown
+        #knownEsts = [x[known] for x in ests]
+        knownEsts = [x[th.where(known)] for x in ests]
+        knownRefs = [x[th.where(known)] for x in refs]
+        #print("Known?", known, len(knownEsts[0]))
+        unknownEsts = [x[th.where(~known)] for x in ests]
+        unknownRefs = [x[th.where(~known)] for x in refs]
+
+        #call pit loss for known
+        if knownEsts[0].size(0) > 0: #control if there are some knowns
+            pitloss = self.computePIT_loss(knownEsts, knownRefs)
+        else:
+            pitloss = None
+        #call mixofmix loss for uknown
+        if unknownEsts[0].size(0) > 0: #control if there are some uknowns
+            mixofmixLoss = self.computeMIXOFMIX_loss(unknownEsts, unknownRefs)
+        else:
+            mixofmixLoss = None
+
+        if pitloss is None:
+            loss = mixofmixLoss
+        elif mixofmixLoss is None:
+            loss = pitloss
+        else:
+            loss = th.cat((pitloss, mixofmixLoss))
+        return -(th.sum(loss)/refs[0].size(0)) # divide by batch

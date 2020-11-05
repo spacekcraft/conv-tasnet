@@ -1,7 +1,10 @@
 fs = 8000
 chunk_len = 4  # (s)
 chunk_size = chunk_len * fs
-num_spks = 2
+num_spks = 2 # number of speakers
+num_outputs = 4 # number of outputs
+knownPercent = 50
+
 
 # network configure
 nnet_conf = {
@@ -13,7 +16,7 @@ nnet_conf = {
     "H": 192,
     "P": 3,
     "norm": "BN",
-    "num_spks": num_spks,
+    "num_spks": num_outputs,
     "non_linear": "relu"
 }
 
@@ -28,6 +31,8 @@ train_data = {
     [train_dir + "spk{:d}.scp".format(n) for n in range(1, 1 + num_spks)],
     "sample_rate":
     fs,
+    "knownPercent":
+    knownPercent,
 }
 
 dev_data = {
@@ -35,6 +40,8 @@ dev_data = {
     "ref_scp":
     [dev_dir + "spk{:d}.scp".format(n) for n in range(1, 1 + num_spks)],
     "sample_rate": fs,
+    "knownPercent":
+    knownPercent,
 }
 
 # trainer config
