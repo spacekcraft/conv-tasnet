@@ -78,11 +78,8 @@ class MixOfMixDataset(object):
         key = self.mix.index_keys[index]
         mix = self.mix[key]
         ref = [reader[key] for reader in self.ref]
-        #throw unfair coin
-        #randomnum = random.random()
-        #known = True if  randomnum < (self.knownPercent/100) else False
-        #print("Known coin ",known, "%", self.knownPercent, "Random num:", randomnum)
-
+        
+        #decide if known or uknown
         known = False if key in self.unknownMixKeys else True
         
         #if known get references

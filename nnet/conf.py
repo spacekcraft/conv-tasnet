@@ -54,7 +54,8 @@ trainer_conf = {
     "optimizer": "adam",
     "optimizer_kwargs": adam_kwargs,
     "min_lr": 1e-8,
-    "patience": 2,
+    "patience": 8,
     "factor": 0.5,
-    "logging_period": 200  # batch number
+    "logging_period": 200,  # batch number
+    "no_impr":100 # bez omezeni
 }

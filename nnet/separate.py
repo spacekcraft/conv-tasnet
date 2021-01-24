@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 # wujian@2018
+# xpavlu10@2020
 
 import os
 import argparse
@@ -19,6 +20,8 @@ import matplotlib.pyplot as plt
 from glob import glob
 
 from tqdm import tqdm
+import re
+import random
 
 import pdb
 
@@ -32,8 +35,8 @@ class NnetComputer(object):
             #Nvidia smi call
             freeGpu = subprocess.check_output('nvidia-smi -q | grep "Minor\|Processes"| grep "None" -B1 | tr -d " " | cut -d ":" -f2 | sed -n "1p"', shell=True)
             if len(freeGpu) == 0: # if gpu not aviable use cpu
-                raise RuntimeError("CUDA device unavailable...exist")
-            self.device = th.device('cuda:'+freeGpu.decode().strip())
+                self.device = th.device("cpu")
+            else: self.device = th.device('cuda:'+freeGpu.decode().strip())
         else:
             self.device = th.device("cpu")
         nnet = self._load_nnet(cpt_dir)
@@ -116,6 +119,51 @@ def run(args):
         lenGen = len(spks)
         for idx, samps in enumerate(spks):
             samps = samps[:mix_samps.size]
+            # norm
+            samps = samps * norm / np.max(np.abs(samps))
+
+            write_wav(
+                os.path.join(args.dump_dir, "spk{}/{}.wav".format(
+                    idx + 1, key)),
+                samps,
+                fs=args.fs)
+        if args.plot != 0: plotOutputs(os.path.join(args.dump_dir, "plot_spk/{}.png".format(key)), spks)
+    #generate SCP files
+    for idx in range(lenGen):
+        generateFile(os.path.join(args.dump_dir, "spk{}".format(
+                    idx + 1)), os.path.join(args.dump_dir, "spk{}.scp".format(
+                    idx + 1)))
+    logger.info("Compute over {:d} utterances".format(len(mix_input)))
+
+def run2(args):
+    os.mkdir(args.dump_dir)
+    mix_input = WaveReader(args.input, sample_rate=args.fs)
+    computer = NnetComputer(args.checkpoint, args.gpu)
+    cpyModelInfo(args.checkpoint, args.dump_dir)
+    lenGen = 0
+    for key, mix_samps in tqdm(mix_input):
+        if logging is True: logger.info("Compute on utterance {}...".format(key))
+        
+        firstSpeaker = key[:3]
+        secondSpeaker = key.split('_')[2][:3]
+
+        aviableKeys = [key for key in mix_input.index_keys if not re.search("((("+firstSpeaker+")|("+secondSpeaker+"))?.*_.*_(("+firstSpeaker+")|("+secondSpeaker+")).*)|((("+firstSpeaker+")|("+secondSpeaker+")).*_.*_(("+firstSpeaker+")|("+secondSpeaker+"))?.*)", key)] 
+            
+        secondKey = aviableKeys[random.randint(0,len(aviableKeys)-1)]
+        secondMix = mix_input[secondKey]
+
+        if len(mix_samps) < len(secondMix):
+                secondMix = secondMix[:len(mix_samps)]
+        else:
+            secondMix = np.pad(secondMix, (0,len(mix_samps)-len(secondMix)), "constant",constant_values=(0,0))
+
+        mixofmix = mix_samps+secondMix
+
+        spks = computer.compute(mixofmix)
+        norm = np.linalg.norm(mixofmix, np.inf)
+        lenGen = len(spks)
+        for idx, samps in enumerate(spks):
+            samps = samps[:mixofmix.size]
             # norm
             samps = samps * norm / np.max(np.abs(samps))
 

@@ -11,7 +11,7 @@ from collections import defaultdict
 
 import torch as th
 import torch.nn.functional as F
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau, ExponentialLR
 from torch.nn.utils import clip_grad_norm_
 
 from .utils import get_logger
@@ -135,13 +135,15 @@ class Trainer(object):
         else:
             self.nnet = nnet.to(self.device)
             self.optimizer = self.create_optimizer(optimizer, optimizer_kwargs)
+        self.scheduler = ExponentialLR(optimizer=self.optimizer, gamma=0.988)
+        '''
         self.scheduler = ReduceLROnPlateau(
             self.optimizer,
             mode="min",
             factor=factor,
             patience=patience,
             min_lr=min_lr,
-            verbose=True)
+            verbose=True)'''
         self.num_params = sum(
             [param.nelement() for param in nnet.parameters()]) / 10.0**6
 

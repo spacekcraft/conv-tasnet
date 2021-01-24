@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 
 # wujian@2018
+# xpavlu10@2020
+
 """
 Compute SI-SDR as the evaluation metric
 """
@@ -43,7 +45,6 @@ class SpeakersReader(object):
         for key in first_reader.index_keys:
             yield key, self[key]
 
-
 class Report(object):
     def __init__(self, spk2gender=None, outputDir = None):
         self.s2g = Reader(spk2gender) if spk2gender else None
@@ -79,10 +80,6 @@ class Report(object):
                 with open(self.outputDir+"/snr.pkl",'wb') as f:
                     pickle.dump(self.snrList, f)
 
-
-                
-
-#xpavlu10 edit
 def run(args):
     print("Working on folder {}".format(args.sep_scp))
     #get all scp files from separation folder
@@ -131,9 +128,7 @@ def run(args):
             #PIT
             snr = permute_si_snr(right_sep_list[:len(ref_list)], ref_list)
             reporter.add(key, snr)
-            #reporter.report()
     reporter.report()
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
