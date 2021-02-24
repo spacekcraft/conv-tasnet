@@ -31,6 +31,7 @@ def run(args):
                             gpuid=gpuids,
                             checkpoint=args.checkpoint,
                             resume=args.resume,
+                            comment = args.comment,
                             **trainer_conf)
     else:
         logger.info("MixtureOfMixturesTrainer")
@@ -38,6 +39,7 @@ def run(args):
                             gpuid=gpuids,
                             checkpoint=args.checkpoint,
                             resume=args.resume,
+                            comment = args.comment,
                             **trainer_conf)
     logger.info("Known pecents "+str(dev_data["knownPercent"]))
     data_conf = {
@@ -114,6 +116,10 @@ if __name__ == "__main__":
                         type=int,
                         default=0,
                         help="Percent of supervised mixtures")
+    parser.add_argument("--comment",
+                        type=str,
+                        default="",
+                        help="Comment for current experiment")
     args = parser.parse_args()
     logger.info("Arguments in command:\n{}".format(pprint.pformat(vars(args))))
     

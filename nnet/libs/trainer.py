@@ -95,7 +95,8 @@ class Trainer(object):
                  factor=0.5,
                  logging_period=100,
                  resume=None,
-                 no_impr=6):
+                 no_impr=6,
+                 comment=""):
         #Nvidia smi call
         freeGpu = subprocess.check_output('nvidia-smi -q | grep "Minor\|Processes"| grep "None" -B1 | tr -d " " | cut -d ":" -f2 | sed -n "1p"', shell=True)
         if len(freeGpu) == 0: # if gpu not aviable use cpu
@@ -104,7 +105,7 @@ class Trainer(object):
         
         #init tensorboard summary writer
         from torch.utils.tensorboard import SummaryWriter
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(logdir = None, comment = comment)
 
         self.gpuid = (int(freeGpu.decode().strip()), )
 
