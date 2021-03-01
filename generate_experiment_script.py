@@ -46,6 +46,7 @@ cache_size=8 \n\
 --checkpoint $cpt_dir \\ \n\
 --mixofmix $mixofmix \\ \n\
 --known_percent $known_percent \\ \n\
+--comment $comment \\ \n\
 > ./$cpt_dir.train.log 2>&1'.format(args.name, args.comment, args.known_percent, args.epochs, args.batch_size))
 
 if __name__ == "__main__":

@@ -105,7 +105,7 @@ class Trainer(object):
         
         #init tensorboard summary writer
         from torch.utils.tensorboard import SummaryWriter
-        self.writer = SummaryWriter(logdir = None, comment = comment)
+        self.writer = SummaryWriter(log_dir = None, comment = comment)
 
         self.gpuid = (int(freeGpu.decode().strip()), )
 
