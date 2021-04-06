@@ -119,6 +119,9 @@ class Reader(object):
             raise KeyError("Missing utterance {}!".format(index))
         return self._load(index)
 
+    def keys(self):
+        return self.index_keys
+
 
 class WaveReader(Reader):
     """

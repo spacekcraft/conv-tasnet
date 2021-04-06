@@ -75,7 +75,7 @@ class Report(object):
                 plt.title("Histogram\n{}: {:d}/{:.3f} SI-SNR".format(gender, num_utts,
                                            tot_snrs / num_utts))
                 plt.hist(self.snrList, bins = 30)
-                plt.savefig(self.outputDir+"/histogram.png")
+                plt.savefig(self.outputDir+"/histogram_{:.3f}.png".format(tot_snrs/num_utts))
 
                 with open(self.outputDir+"/snr.pkl",'wb') as f:
                     pickle.dump(self.snrList, f)

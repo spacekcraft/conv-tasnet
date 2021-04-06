@@ -1,4 +1,5 @@
 # wujian@2018
+# xpavlu10@2020
 
 import random
 import torch as th
@@ -57,19 +58,41 @@ class MixOfMixDataset(object):
     """
     Per Utterance Loader
     """
-    def __init__(self, mix_scp="", ref_scp=None, sample_rate=8000, knownPercent = 0):
+    def __init__(self, mix_scp="", ref_scp=None, sample_rate=8000, knownPercent = 0, mix_supervised=False):
+        self.mix_supervised = mix_supervised
         self.knownPercent = knownPercent
         self.mix = WaveReader(mix_scp, sample_rate=sample_rate)
         self.ref = [
             WaveReader(ref, sample_rate=sample_rate) for ref in ref_scp
         ]
         
-        #select unknown keys
+        #select unknown keys and remember which is unknown and which known
         self.unknownMixKeys = []
+        self.knownMixKeys = []
         for key in self.mix.index_keys:
             #throw unfair coin
             if  random.random() > (self.knownPercent/100): #if uknown
                 self.unknownMixKeys.append(key)        
+            else:
+                self.knownMixKeys.append(key)
+
+    def _mix_mixture_of_mixtures(self, key, mix, keysList):
+        #get first and second speaker ID
+        firstSpeaker = key[:3]
+        secondSpeaker = key.split('_')[2][:3]
+        #get aviable keys - not contains first or second speaker from the first mix
+        aviableKeys = [key for key in keysList if not re.search("((("+firstSpeaker+")|("+secondSpeaker+"))?.*_.*_(("+firstSpeaker+")|("+secondSpeaker+")).*)|((("+firstSpeaker+")|("+secondSpeaker+")).*_.*_(("+firstSpeaker+")|("+secondSpeaker+"))?.*)", key)] 
+        #randomly choose second key from aviable keys
+        secondKey = aviableKeys[random.randint(0,len(aviableKeys)-1)]
+        #get second mix
+        secondMix = self.mix[secondKey] 
+        #pad or cut
+        if len(mix) < len(secondMix):
+            secondMix = secondMix[:len(mix)]
+        else:
+            secondMix = np.pad(secondMix, (0,len(mix)-len(secondMix)), "constant",constant_values=(0,0))
+        #mix mixtures
+        return mix, key, secondMix, secondKey, mix+secondMix
 
     def __len__(self):
         return len(self.mix)
@@ -77,36 +100,31 @@ class MixOfMixDataset(object):
     def __getitem__(self, index):
         key = self.mix.index_keys[index]
         mix = self.mix[key]
-        ref = [reader[key] for reader in self.ref]
+        ref = [reader[key] for reader in self.ref] # read references
         
         #decide if known or uknown
         known = False if key in self.unknownMixKeys else True
         
         #if known get references
         if known is True:
-            return {
-                "mix": mix.astype(np.float32),
-                "ref": [r.astype(np.float32) for r in ref],
-                "known": known # this to tell if it is known source signals or not 
-            }
+            if self.mix_supervised:
+                _, _, secondMix, secondKey, mixed = self._mix_mixture_of_mixtures(key, mix, self.knownMixKeys)
+                ref += [reader[secondKey] for reader in self.ref] # read references for the second key
+                
+                return {
+                    "mix": mixed.astype(np.float32),
+                    "ref": [r.astype(np.float32) for r in ref],
+                    "known": known # this to tell if it is known source signals or not 
+                }
+            else:
+                return {
+                    "mix": mix.astype(np.float32),
+                    "ref": [r.astype(np.float32) for r in ref],
+                    "known": known # this to tell if it is known source signals or not 
+                }
         #if uknown mix two mixtures and take mixtures as references
         else:
-            #get first and second speaker ID
-            firstSpeaker = key[:3]
-            secondSpeaker = key.split('_')[2][:3]
-            #get aviable keys - not contains first or second speaker from the first mix
-            aviableKeys = [key for key in self.unknownMixKeys if not re.search("((("+firstSpeaker+")|("+secondSpeaker+"))?.*_.*_(("+firstSpeaker+")|("+secondSpeaker+")).*)|((("+firstSpeaker+")|("+secondSpeaker+")).*_.*_(("+firstSpeaker+")|("+secondSpeaker+"))?.*)", key)] 
-            #randomly choose second key from aviable keys
-            secondKey = aviableKeys[random.randint(0,len(aviableKeys)-1)]
-            #get second mix
-            secondMix = self.mix[secondKey] 
-            #pad or cut
-            if len(mix) < len(secondMix):
-                secondMix = secondMix[:len(mix)]
-            else:
-                secondMix = np.pad(secondMix, (0,len(mix)-len(secondMix)), "constant",constant_values=(0,0))
-            #mix mixtures
-            mixed = mix+secondMix
+            _, _, secondMix, _, mixed = self._mix_mixture_of_mixtures(key, mix, self.unknownMixKeys)
             #get mixtures as refs
             return {
                 "mix": mixed.astype(np.float32),

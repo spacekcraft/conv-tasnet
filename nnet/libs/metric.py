@@ -4,8 +4,10 @@ SI-SNR(scale-invariant SNR/SDR) measure of speech separation
 """
 
 import numpy as np
+import torch as th
 
 from itertools import permutations
+from itertools import combinations
 
 import pdb
 
@@ -84,3 +86,68 @@ def permute_si_snr_mix_of_mix(xlist, slist):
             bestOrder = order
 
     return [xlist[n] for n in bestOrder]
+
+
+def genCombinations(N): # tohle generovat tak, aby byla pro 4 jen 1/3 2/2
+    """
+    Arguments:
+    N: number of outputs
+    Return:
+    all: generated combinations
+    """
+    all = []
+    m = [i for i in range(N)]
+    for i in range(int(N/2),N):
+        #pdb.set_trace()
+        left = list(combinations(m, i))
+        for eachLeft in left:
+            eachLeft = sorted(eachLeft) #sort eachLeft
+            x = [i for i in m if i not in eachLeft]
+            for eachRight in list(combinations(x,N-len(eachLeft))): # where N-len(eachLeft)
+                newOne = (eachLeft, sorted(eachRight))
+                newOne2 = (sorted(eachRight), eachLeft)
+                #pdb.set_trace()
+                if (newOne not in all) and (newOne2 not in all):   #duplicity check, check if this pair exists in all, this is possible because eachLeft and newOne are sorted
+                    all.append(newOne)
+    return all
+
+def combine_si_snr_mix_of_mix(ests, refs):
+    '''Mix of mix objective function'''
+    num_spks = len(refs)
+    num_ests = len(ests) # number of estimates
+    loss = None
+    combs = genCombinations(num_ests)
+    #print("Combinations generated", combs)
+    #for each combination in combs
+    for comb in combs:
+        #generate mix of outputs
+        first = None # first mix of estimates
+        for out in comb[0]:
+            if first is None:
+                first = ests[out]
+            else:    
+                first += ests[out]
+        second = None # second mix of estimates
+        for out in comb[1]:
+            if second is None:
+                second = ests[out]
+            else:    
+                second += ests[out]
+        #try both combinations
+        if first is None or second is None:
+            raise RuntimeError("First or Second is None in loss function.")
+        #firstLoss is array of size N -> means batch size
+        firstLoss = (si_snr(first, refs[0]) + si_snr(second, refs[1]))/2 # u sissnr chci vetsi hodnotu, tudiz bud obratit znamenko, nebo udelat maximum a pak vratit minus hodnotu
+        secondLoss = (si_snr(second, refs[0]) + si_snr(first, refs[1]))/2
+        #compare loss from both permutation
+        
+        stackedLoss = np.stack([firstLoss, secondLoss])
+        newLoss = np.max(stackedLoss, axis=0)
+        #compare with losses from other combinations        
+        if loss is None:
+            loss = newLoss
+        else:
+            stackedLoss = np.stack([newLoss, loss])
+            loss = np.max(stackedLoss, axis=0)
+    #print("Loss this is a loss {}".format(loss))
+    return loss

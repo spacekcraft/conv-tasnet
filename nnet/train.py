@@ -32,6 +32,7 @@ def run(args):
                             checkpoint=args.checkpoint,
                             resume=args.resume,
                             comment = args.comment,
+                            log_dir = args.log_dir,
                             **trainer_conf)
     else:
         logger.info("MixtureOfMixturesTrainer")
@@ -40,6 +41,7 @@ def run(args):
                             checkpoint=args.checkpoint,
                             resume=args.resume,
                             comment = args.comment,
+                            log_dir = args.log_dir,
                             **trainer_conf)
     logger.info("Known pecents "+str(dev_data["knownPercent"]))
     data_conf = {
@@ -120,6 +122,10 @@ if __name__ == "__main__":
                         type=str,
                         default="",
                         help="Comment for current experiment")
+    parser.add_argument("--log_dir",
+                        type=str,
+                        default="",
+                        help="Log_dir for current experiment")
     args = parser.parse_args()
     logger.info("Arguments in command:\n{}".format(pprint.pformat(vars(args))))
     
