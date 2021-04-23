@@ -33,6 +33,8 @@ train_data = {
     fs,
     "knownPercent":
     knownPercent,
+    "only_supervised":
+    False,
 }
 
 dev_data = {
@@ -42,6 +44,8 @@ dev_data = {
     "sample_rate": fs,
     "knownPercent":
     knownPercent,
+    "only_supervised":
+    False,
 }
 
 # trainer config
