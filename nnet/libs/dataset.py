@@ -4,11 +4,12 @@
 import random
 import torch as th
 import numpy as np
+from typing import Dict, List, Tuple
 
 from torch.utils.data.dataloader import default_collate
 import torch.utils.data as dat
 
-from .audio import WaveReader
+from .audio import WaveReader, DIHARDReader
 
 import re
 
@@ -58,7 +59,19 @@ class MixOfMixDataset(object):
     """
     Per Utterance Loader
     """
-    def __init__(self, mix_scp="", ref_scp=None, sample_rate=8000, knownPercent = 0, mix_supervised=False):
+    def __init__(self, mix_scp:str="", ref_scp:List=None, sample_rate:int=8000, knownPercent: int = 0, mix_supervised: bool = False, only_supervised: bool = False):
+        """[summary]
+
+        Args:
+            mix_scp (str, optional): [description]. Defaults to "".
+            ref_scp (List, optional): [description]. Defaults to None.
+            sample_rate (int, optional): [description]. Defaults to 8000.
+            knownPercent (int, optional): [description]. Defaults to 0.
+            mix_supervised (bool, optional): If set to True then the supervised part of dataset is also mixed. Defaults to False.
+            only_supervised (bool, optional): If set to True then only supervised part from dataset is provided. Defaults to False.
+        """        
+        self.only_supervised = only_supervised
+        print("Only supervised?: {}".format(self.only_supervised))
         self.mix_supervised = mix_supervised
         self.knownPercent = knownPercent
         self.mix = WaveReader(mix_scp, sample_rate=sample_rate)
@@ -76,7 +89,7 @@ class MixOfMixDataset(object):
             else:
                 self.knownMixKeys.append(key)
 
-    def _mix_mixture_of_mixtures(self, key, mix, keysList):
+    def _mix_mixture_of_mixtures(self, key:str, mix:np.ndarray, keysList:List)->Tuple[np.ndarray,str,np.ndarray,str,np.ndarray]:
         #get first and second speaker ID
         firstSpeaker = key[:3]
         secondSpeaker = key.split('_')[2][:3]
@@ -94,11 +107,21 @@ class MixOfMixDataset(object):
         #mix mixtures
         return mix, key, secondMix, secondKey, mix+secondMix
 
-    def __len__(self):
+    def __len__(self)->int:
+        # if only supervised part
+        if self.only_supervised:
+            # return length of knwon mixture keys
+            return len(self.knownMixKeys)
+        # else return length of all mixtures
         return len(self.mix)
 
-    def __getitem__(self, index):
-        key = self.mix.index_keys[index]
+    def __getitem__(self, index:int)->Dict:
+        # if only supervised is set, then get mixture key from the list of the supervised keys (known keys)
+        if self.only_supervised:
+            key = self.knownMixKeys[index]
+        # else get key from all keys
+        else:
+            key = self.mix.index_keys[index]
         mix = self.mix[key]
         ref = [reader[key] for reader in self.ref] # read references
         
@@ -130,6 +153,67 @@ class MixOfMixDataset(object):
                 "mix": mixed.astype(np.float32),
                 "ref": [mix, secondMix],
                 "known": known # this to tell if it is known source signals or not 
+            }
+
+class DIHARDWsjMixOfMixDataset(object):
+    """
+    Per Utterance Loader
+    """
+    def __init__(self, dihard_json:str, wsj_mix_scp:str="", wsj_ref_scp:List[str]=None, sample_rate:int=8000, knownPercent:int = 0):
+        # knownPercent set percentage of supervised part of the dataset
+        self.knownPercent = knownPercent
+        self.wsj_mix = WaveReader(wsj_mix_scp, sample_rate=sample_rate)
+        self.wsj_ref = [
+            WaveReader(ref, sample_rate=sample_rate) for ref in wsj_ref_scp
+        ]
+        
+        self.dihard = DIHARDReader(json_path = dihard_json, sample_rate = sample_rate, preload = 4)
+
+        #compute number of supervised mixtures
+        numberOfKnowns = int(len(self.dihard)/(100-self.knownPercent))*knownPercent
+        #randomly select supervised mixtures from the wall street journal dataset
+        self.knownMixKeys = random.sample(self.wsj_mix.keys(), numberOfKnowns)
+
+    def _mix_mixture_of_mixtures(self, id:int)->Tuple[np.ndarray,np.ndarray,np.ndarray]:
+        # choose second mix
+        secondID = id
+        # while the secondID is randomly choosed as the different than id and cut is not from the same mixture
+        while (secondID == id) or (self.dihard.key(id) == self.dihard.key(secondID)):
+            # generate random ID
+            secondID = random.randint(0,len(self.dihard)-1)
+        # get mixtures
+        firstMix = self.dihard[id]
+        secondMix = self.dihard[secondID]
+        #cut or pad
+        if len(firstMix) < len(secondMix):
+            secondMix = secondMix[:len(firstMix)]
+        else:
+            secondMix = np.pad(secondMix, (0,len(firstMix)-len(secondMix)), "constant",constant_values=(0,0))
+        # return
+        return firstMix, secondMix, firstMix+secondMix
+
+    def __len__(self)->int:
+        return len(self.knownMixKeys)+len(self.dihard)
+
+    def __getitem__(self, index:int)->Dict:
+        # if unsupervised index
+        if index < len(self.dihard):
+            firstMix, secondMix, mom = self._mix_mixture_of_mixtures(index)
+            ref = [firstMix, secondMix]
+            return{
+                "mix": mom.astype(np.float32),
+                "ref": [r.astype(np.float32) for r in ref],
+                "known": False # this to tell if it is known source signals or not 
+            }
+        # if supervised
+        else:
+            key = self.knownMixKeys[index-len(self.dihard)]
+            mix = self.wsj_mix[key]
+            ref = [reader[key] for reader in self.wsj_ref] # read references
+            return{
+                "mix": mix.astype(np.float32),
+                "ref": [r.astype(np.float32) for r in ref],
+                "known": True # this to tell if it is known source signals or not 
             }
 
 class ChunkSplitter(object):
@@ -182,7 +266,6 @@ class ChunkSplitter(object):
                 chunks.append(chunk)
                 s += self.least
         return chunks
-
 
 class DataLoader(object):
     """
@@ -238,3 +321,5 @@ class DataLoader(object):
             batch, chunk_list = self._merge(chunk_list)
             for obj in batch:
                 yield obj
+
+

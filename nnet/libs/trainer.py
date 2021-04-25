@@ -434,11 +434,14 @@ class MixtureOfMixturesTrainer(Trainer):
             i += 1
         return th.stack(returnLoss)
 
-    def computeMIXOFMIX_loss(self, ests, refs):
+    def computeMIXOFMIX_loss(self, mix, ests, refs):
         '''Mix of mix objective function
         '''
+        correction = (mix - th.sum(th.stack(ests), dim=0))/4
         num_spks = len(refs)
         num_ests = len(ests) # number of estimates
+        for est in ests:
+            est = est + correction
         loss = None
         if self.combs is None: # if combinations are not generated, generate them and remember them
             self.combs = self.genCombinations(num_ests)
@@ -498,7 +501,7 @@ class MixtureOfMixturesTrainer(Trainer):
             pitloss = None
         #call mixofmix loss for uknown
         if unknownEsts[0].size(0) > 0: #control if there are some uknowns
-            mixofmixLoss = self.computeMIXOFMIX_loss(unknownEsts, unknownRefs)
+            mixofmixLoss = self.computeMIXOFMIX_loss(egs["mix"], unknownEsts, unknownRefs)
         else:
             mixofmixLoss = None
 

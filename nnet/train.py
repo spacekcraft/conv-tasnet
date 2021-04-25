@@ -22,6 +22,8 @@ logger = get_logger(__name__)
 def run(args):
     train_data["knownPercent"] = args.known_percent
     dev_data["knownPercent"] = args.known_percent
+    train_data["only_supervised"] = args.only_supervised
+    dev_data["only_supervised"] = args.only_supervised
     gpuids = tuple(map(int, args.gpus.split(",")))
 
     nnet = ConvTasNet(**nnet_conf)
@@ -114,6 +116,12 @@ if __name__ == "__main__":
                         type=int,
                         default=0,
                         help="Number of workers used in data loader")
+    
+    parser.add_argument("--only_supervised",
+                        type=bool,
+                        default=False,
+                        help="Number of workers used in data loader")
+
     parser.add_argument("--known_percent",
                         type=int,
                         default=0,

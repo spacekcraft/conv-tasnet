@@ -14,7 +14,7 @@ import numpy as np
 from conv_tas_net import ConvTasNet
 
 from libs.utils import load_json, get_logger
-from libs.audio import WaveReader, write_wav
+from libs.audio import WaveReader, DIHARDReader, write_wav
 
 import matplotlib.pyplot as plt
 from glob import glob
@@ -180,6 +180,40 @@ def run2(args):
                     idx + 1)))
     logger.info("Compute over {:d} utterances".format(len(mix_input)))
 
+def run_DIHARD(args):
+    """Run separation on DIHARD dataset
+
+    Args:
+        args ([type]): [description]
+    """    
+    os.mkdir(args.dump_dir)
+    mix_input = DIHARDReader(args.input, sample_rate=args.fs)
+    computer = NnetComputer(args.checkpoint, args.gpu)
+    cpyModelInfo(args.checkpoint, args.dump_dir)
+    lenGen = 0
+    for key, mix_samps in tqdm(mix_input):
+        if logging is True: logger.info("Compute on utterance {}...".format(key))
+        spks = computer.compute(mix_samps)
+        norm = np.linalg.norm(mix_samps, np.inf)
+        lenGen = len(spks)
+        for idx, samps in enumerate(spks):
+            samps = samps[:mix_samps.size]
+            # norm
+            samps = samps * norm / np.max(np.abs(samps))
+
+            write_wav(
+                os.path.join(args.dump_dir, "spk{}/{}.wav".format(
+                    idx + 1, key)),
+                samps,
+                fs=args.fs)
+        if args.plot != 0: plotOutputs(os.path.join(args.dump_dir, "plot_spk/{}.png".format(key)), spks)
+    #generate SCP files
+    for idx in range(lenGen):
+        generateFile(os.path.join(args.dump_dir, "spk{}".format(
+                    idx + 1)), os.path.join(args.dump_dir, "spk{}.scp".format(
+                    idx + 1)))
+    logger.info("Compute over {:d} utterances".format(len(mix_input)))
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -206,5 +240,11 @@ if __name__ == "__main__":
         type=int,
         default=0,
         help="If not 0, then plot results")
+    parser.add_argument(
+        "--type", type=str, default="MOM", help="MOM|DIHARD")
     args = parser.parse_args()
-    run(args)
+
+    if args.type == "MOM":
+        run(args)
+    elif args.type == "DIHARD":
+        run_DIHARD(args)
